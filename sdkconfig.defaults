@@ -1,0 +1,16 @@
+# VoxRelay — plain ESP32 (WROOM) + external 2-relay module.
+CONFIG_IDF_TARGET="esp32"
+
+# Frees ~40KB and we never need Bluetooth on a relay box.
+CONFIG_BT_ENABLED=n
+
+# The web UI serves one page + a couple of JSON endpoints.
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+CONFIG_HTTPD_MAX_URI_LEN=512
+
+# Sane logging out of the box.
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# OTA: two app slots + otadata (requires the 4MB flash on standard devkits).
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_TWO_OTA=y
