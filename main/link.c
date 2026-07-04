@@ -70,10 +70,13 @@ static void send_hello(void) {
   if (!ip[0]) return;  // not on the network yet
   // "kind" tells the Master/Composer what this hardware IS — without it,
   // everything with an IP used to get guessed as a VoxPixel.
-  char body[160];
+  // "channels" lets the Master/Composer size the device UI to the real
+  // hardware (this box has VOX_RELAY_COUNT outputs; production runs 4 or 8).
+  char body[176];
   snprintf(body, sizeof(body),
-           "{\"t\":\"hello\",\"device\":\"%s\",\"rssi\":%d,\"ip\":\"%s\",\"kind\":\"relay\"}",
-           mac, net_rssi(), ip);
+           "{\"t\":\"hello\",\"device\":\"%s\",\"rssi\":%d,\"ip\":\"%s\","
+           "\"kind\":\"relay\",\"channels\":%d}",
+           mac, net_rssi(), ip, VOX_RELAY_COUNT);
   link_broadcast(body);
 }
 
