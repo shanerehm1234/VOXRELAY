@@ -7,6 +7,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_app_desc.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -14,6 +15,7 @@
 #include "link.h"
 #include "net.h"
 #include "relay.h"
+#include "update.h"
 
 static const char *TAG = "web";
 
@@ -62,6 +64,11 @@ static const char PAGE[] =
     "<label>Subnet mask</label><input id=nmask placeholder='255.255.255.0'>"
     "<label>DNS</label><input id=ndns placeholder='(gateway)'></div>"
     "<button class=save onclick=ipcfg()>Save network settings</button></div>"
+    "<div class=card><div class=row><b>Firmware</b><span id=fwv>…</span></div>"
+    "<button class=save onclick=chk()>Check for updates</button>"
+    "<label style='display:block;margin-top:10px'>Or install a firmware file (.bin)</label>"
+    "<input type=file id=fwfile accept=.bin>"
+    "<button class=off style='width:100%' onclick=upload()>Install file</button></div>"
     "<script>"
     "async function tick(){try{const r=await fetch('/status');const s=await r.json();"
     "document.getElementById('status').innerHTML="
@@ -71,6 +78,7 @@ static const char PAGE[] =
     "`<div class=row><b>Vox Master</b><span>${s.paired?'<span class=\"dot ok\"></span>paired':'<span class=\"dot bad\"></span>not paired'}</span></div>`+"
     "`<div class=row><b>Relay 1</b><span>${s.relay1?'CLOSED':'open'}</span></div>`+"
     "`<div class=row><b>Relay 2</b><span>${s.relay2?'CLOSED':'open'}</span></div>`;"
+    "document.getElementById('fwv').textContent='v'+(s.fw||'?');"
     "}catch(e){}}tick();setInterval(tick,2000);"
     "function rl(ch,on){fetch(`/relay?ch=${ch}&on=${on}`,{method:'POST'}).then(tick)}"
     "function wifi(){const s=document.getElementById('ssid').value.trim();"
@@ -100,6 +108,22 @@ static const char PAGE[] =
     ".then(async r=>{if(r.ok)alert('Saved — rebooting with the new network settings. If it does not "
     "come back at the new address within a minute, it will open its VoxRelay setup Wi-Fi so you can fix it.');"
     "else alert(await r.text())})}"
+    "async function chk(){const b=event.target;b.textContent='Checking…';b.disabled=true;"
+    "try{const r=await fetch('/update/check');const u=await r.json();"
+    "if(!u.ok)alert('Could not reach the update server — check the internet connection.');"
+    "else if(!u.available)alert(`You're up to date (v${u.current}).`);"
+    "else if(confirm(`Version ${u.latest} is available (you have ${u.current}).`+"
+    "(u.notes?`\n\n${u.notes}`:'')+`\n\nInstall now? The relays will hold their state until the reboot.`)){"
+    "await fetch('/update/apply',{method:'POST'});"
+    "alert('Updating — the VoxRelay will reboot itself in about a minute.')}}"
+    "catch(e){alert('Update check failed.')}"
+    "b.textContent='Check for updates';b.disabled=false}"
+    "function upload(){const f=document.getElementById('fwfile').files[0];"
+    "if(!f){alert('Choose a .bin file first');return}"
+    "if(!confirm(`Install ${f.name}?`))return;"
+    "fetch('/ota',{method:'POST',body:f}).then(async r=>{"
+    "if(r.ok)alert('Installed — rebooting now.');else alert(await r.text())})"
+    ".catch(()=>alert('Upload failed'))}"
     "</script></div></body></html>";
 
 static esp_err_t root_get(httpd_req_t *req) {
@@ -113,12 +137,14 @@ static esp_err_t status_get(httpd_req_t *req) {
   net_ip(ip, sizeof(ip));
   net_hostname(host, sizeof(host));
   link_master_mac(master, sizeof(master));
-  char body[320];
+  char body[384];
   snprintf(body, sizeof(body),
            "{\"service\":\"voxrelay\",\"hostname\":\"%s\",\"mac\":\"%s\",\"ip\":\"%s\","
-           "\"rssi\":%d,\"paired\":%s,\"master\":\"%s\",\"relay1\":%s,\"relay2\":%s}",
+           "\"rssi\":%d,\"paired\":%s,\"master\":\"%s\",\"relay1\":%s,\"relay2\":%s,"
+           "\"fw\":\"%s\",\"kind\":\"relay\"}",
            host, mac, ip, net_rssi(), link_is_paired() ? "true" : "false", master,
-           relay_get(1) ? "true" : "false", relay_get(2) ? "true" : "false");
+           relay_get(1) ? "true" : "false", relay_get(2) ? "true" : "false",
+           esp_app_get_description()->version);
   httpd_resp_set_type(req, "application/json");
   return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
 }
@@ -226,6 +252,24 @@ static esp_err_t ota_post(httpd_req_t *req) {
   return ESP_OK;
 }
 
+static esp_err_t update_check_get(httpd_req_t *req) {
+  update_info_t u;
+  update_check(&u);
+  char body[420];
+  snprintf(body, sizeof(body),
+           "{\"ok\":%s,\"available\":%s,\"current\":\"%s\",\"latest\":\"%s\",\"notes\":\"%s\"}",
+           u.ok ? "true" : "false", u.available ? "true" : "false", u.current, u.latest, u.notes);
+  httpd_resp_set_type(req, "application/json");
+  return httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t update_apply_post(httpd_req_t *req) {
+  bool started = update_apply();
+  httpd_resp_set_type(req, "application/json");
+  return httpd_resp_send(req, started ? "{\"ok\":true}" : "{\"ok\":false}",
+                         HTTPD_RESP_USE_STRLEN);
+}
+
 static esp_err_t ipcfg_get(httpd_req_t *req) {
   net_ipcfg_t c;
   net_get_ipcfg(&c);
@@ -306,6 +350,8 @@ void web_start(void) {
       {.uri = "/forget", .method = HTTP_POST, .handler = forget_post},
       {.uri = "/ipcfg", .method = HTTP_GET, .handler = ipcfg_get},
       {.uri = "/ota", .method = HTTP_POST, .handler = ota_post},
+      {.uri = "/update/check", .method = HTTP_GET, .handler = update_check_get},
+      {.uri = "/update/apply", .method = HTTP_POST, .handler = update_apply_post},
       {.uri = "/ipcfg", .method = HTTP_POST, .handler = ipcfg_post},
   };
   for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
