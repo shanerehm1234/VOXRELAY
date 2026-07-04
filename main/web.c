@@ -216,7 +216,11 @@ static esp_err_t ota_post(httpd_req_t *req) {
     return httpd_resp_send(req, "no OTA slot", HTTPD_RESP_USE_STRLEN);
   }
   esp_ota_handle_t ota;
-  if (esp_ota_begin(slot, OTA_SIZE_UNKNOWN, &ota) != ESP_OK) {
+  // Sequential erase: page-at-a-time during writes. The up-front full-slot
+  // erase (OTA_SIZE_UNKNOWN) draws max flash current for seconds on top of
+  // WiFi + the relay module — enough to brown out a USB-powered devkit
+  // (observed as RTCWDT_RTC_RESET mid-upload).
+  if (esp_ota_begin(slot, OTA_WITH_SEQUENTIAL_WRITES, &ota) != ESP_OK) {
     httpd_resp_set_status(req, "500 Internal Server Error");
     return httpd_resp_send(req, "ota begin failed", HTTPD_RESP_USE_STRLEN);
   }
@@ -338,6 +342,9 @@ void web_start(void) {
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.lru_purge_enable = true;
   cfg.max_uri_handlers = 20;  // routes + captive probes overflow the default 8
+  // The update check runs a TLS handshake on this task — the 4KB default
+  // stack overflows ~30 frames deep in mbedTLS (StoreProhibited panic).
+  cfg.stack_size = 16384;
   if (httpd_start(&server, &cfg) != ESP_OK) {
     ESP_LOGE(TAG, "httpd_start failed");
     return;

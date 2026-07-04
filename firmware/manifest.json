@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
-  "url": "https://raw.githubusercontent.com/shanerehm1234/VOXRELAY/main/firmware/voxrelay-1.1.0.bin",
-  "notes": "Adds in-app updates, captive-portal setup, static IP with rescue AP, and device-kind identity."
+  "version": "1.1.1",
+  "url": "https://raw.githubusercontent.com/shanerehm1234/VOXRELAY/main/firmware/voxrelay-1.1.1.bin",
+  "notes": "Fixes update-check crash, OTA brownout during flash erase, and relay channel 0 handling."
 }

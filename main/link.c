@@ -92,6 +92,7 @@ static void handle_relay_command(const cJSON *data) {
   int channel = 1;
   const cJSON *ch = cJSON_GetObjectItem(data, "channel");
   if (cJSON_IsNumber(ch)) channel = ch->valueint;
+  if (channel < 1) channel = 1;  // old Composer clips defaulted to 0
   const char *action = "pulse";
   const cJSON *ac = cJSON_GetObjectItem(data, "action");
   if (cJSON_IsString(ac)) action = ac->valuestring;
