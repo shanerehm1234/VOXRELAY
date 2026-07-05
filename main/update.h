@@ -9,7 +9,7 @@
 #include <stdbool.h>
 
 #define UPDATE_MANIFEST_URL \
-  "https://raw.githubusercontent.com/shanerehm1234/VOXRELAY/main/firmware/manifest.json"
+  "https://raw.githubusercontent.com/shanerehm1234/rehmlights-firmware/main/voxrelay/manifest.json"
 
 typedef struct {
   char current[32];   // running firmware version (esp_app_desc)
