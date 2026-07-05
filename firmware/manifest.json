@@ -1,5 +1,5 @@
 {
-  "version": "1.1.3",
-  "url": "https://raw.githubusercontent.com/shanerehm1234/VOXRELAY/main/firmware/voxrelay-1.1.3.bin",
-  "notes": "Reports its relay count to the Master/Composer, so device settings match the real hardware."
+  "version": "1.1.4",
+  "url": "https://raw.githubusercontent.com/shanerehm1234/VOXRELAY/main/firmware/voxrelay-1.1.4.bin",
+  "notes": "Reports its paired Master in the heartbeat so pairing auto-heals if it ever desyncs."
 }

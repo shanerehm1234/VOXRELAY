@@ -72,11 +72,13 @@ static void send_hello(void) {
   // everything with an IP used to get guessed as a VoxPixel.
   // "channels" lets the Master/Composer size the device UI to the real
   // hardware (this box has VOX_RELAY_COUNT outputs; production runs 4 or 8).
-  char body[176];
+  // "master" = who we think we're paired to ("" if none). Lets the Master
+  // detect a desync (e.g. our NVS was wiped) and re-assert pairing.
+  char body[220];
   snprintf(body, sizeof(body),
            "{\"t\":\"hello\",\"device\":\"%s\",\"rssi\":%d,\"ip\":\"%s\","
-           "\"kind\":\"relay\",\"channels\":%d}",
-           mac, net_rssi(), ip, VOX_RELAY_COUNT);
+           "\"kind\":\"relay\",\"channels\":%d,\"master\":\"%s\"}",
+           mac, net_rssi(), ip, VOX_RELAY_COUNT, s_master);
   link_broadcast(body);
 }
 
