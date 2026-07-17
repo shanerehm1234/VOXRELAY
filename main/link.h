@@ -23,3 +23,7 @@ void link_start(void);
 // lands with the full pairing rollout).
 void link_master_mac(char *out, int len);
 bool link_is_paired(void);
+
+// Locally forget the paired Master (web-UI "Forget Master"). Escape hatch so a
+// paired prop is never stranded if its Master disappears.
+void link_unpair(void);

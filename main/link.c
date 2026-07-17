@@ -45,6 +45,15 @@ static void pairing_store(const char *master) {
 void link_master_mac(char *out, int len) { snprintf(out, (size_t)len, "%s", s_master); }
 bool link_is_paired(void) { return s_master[0] != 0; }
 
+// Local escape hatch: forget the paired Master from this device (web-UI button).
+// Always works, so exclusive trust can never strand a prop when its Master is
+// gone — it becomes adoptable by a new Master again.
+void link_unpair(void) {
+  pairing_store("");
+  relay_all_off();
+  ESP_LOGI(TAG, "unpaired (local)");
+}
+
 // --- tx helpers ----------------------------------------------------------------
 
 static void link_broadcast(const char *json) {
@@ -114,6 +123,16 @@ static void handle_relay_command(const cJSON *data) {
   }
 }
 
+// Exclusive trust (mirrors OcularVox): once paired, obey command/show frames
+// only from our paired Master — every such frame carries a "master" MAC field.
+// Unpaired = obey anyone (out of the box). Blackout/"stop" is left UNgated as a
+// safety fail-safe (any Master, or a lost pairing, can still kill outputs).
+static bool from_our_master(const cJSON *doc) {
+  if (!link_is_paired()) return true;
+  const cJSON *m = cJSON_GetObjectItem(doc, "master");
+  return cJSON_IsString(m) && strcasecmp(m->valuestring, s_master) == 0;
+}
+
 static void handle_frame(const uint8_t *buf, int len) {
   cJSON *doc = cJSON_ParseWithLength((const char *)buf, (size_t)len);
   if (!doc) return;
@@ -130,7 +149,8 @@ static void handle_frame(const uint8_t *buf, int len) {
     const cJSON *dev = cJSON_GetObjectItem(doc, "device");
     const cJSON *type = cJSON_GetObjectItem(doc, "type");
     if (cJSON_IsString(dev) && cJSON_IsString(type) &&
-        strcasecmp(dev->valuestring, my_mac) == 0 && strcmp(type->valuestring, "relay") == 0) {
+        strcasecmp(dev->valuestring, my_mac) == 0 && strcmp(type->valuestring, "relay") == 0 &&
+        from_our_master(doc)) {
       const cJSON *data = cJSON_GetObjectItem(doc, "data");
       if (cJSON_IsObject(data)) {
         handle_relay_command(data);
@@ -144,8 +164,11 @@ static void handle_frame(const uint8_t *buf, int len) {
   } else if (strcmp(t, "pair_request") == 0) {
     const cJSON *dev = cJSON_GetObjectItem(doc, "device");
     const cJSON *master = cJSON_GetObjectItem(doc, "master");
+    // Accept only if unpaired, or the request is from the Master we're already
+    // paired to — a different Master can't steal a paired prop.
     if (cJSON_IsString(dev) && cJSON_IsString(master) &&
-        strcasecmp(dev->valuestring, my_mac) == 0) {
+        strcasecmp(dev->valuestring, my_mac) == 0 &&
+        (!link_is_paired() || strcasecmp(master->valuestring, s_master) == 0)) {
       pairing_store(master->valuestring);
       char body[96];
       snprintf(body, sizeof(body), "{\"t\":\"pair_ack\",\"device\":\"%s\"}", my_mac);
@@ -154,7 +177,10 @@ static void handle_frame(const uint8_t *buf, int len) {
     }
   } else if (strcmp(t, "unpair") == 0) {
     const cJSON *dev = cJSON_GetObjectItem(doc, "device");
-    if (cJSON_IsString(dev) && strcasecmp(dev->valuestring, my_mac) == 0) {
+    // Only our paired Master can remotely forget us (local web-UI Forget is the
+    // always-available escape hatch — see link_unpair()).
+    if (cJSON_IsString(dev) && strcasecmp(dev->valuestring, my_mac) == 0 &&
+        from_our_master(doc)) {
       pairing_store("");
       relay_all_off();
       ESP_LOGI(TAG, "unpaired");

@@ -75,7 +75,7 @@ static const char PAGE[] =
     "`<div class=row><b>Name</b><span>${s.hostname}</span></div>`+"
     "`<div class=row><b>Device ID</b><span style='font-family:monospace;font-size:12px'>${s.mac}</span></div>`+"
     "`<div class=row><b>Wi-Fi</b><span><span class='dot ${s.ip?'ok':'bad'}'></span>${s.ip||'not connected'}${s.rssi?` · ${s.rssi} dBm`:''}</span></div>`+"
-    "`<div class=row><b>Vox Master</b><span>${s.paired?'<span class=\"dot ok\"></span>paired':'<span class=\"dot bad\"></span>not paired'}</span></div>`+"
+    "`<div class=row><b>Vox Master</b><span>${s.paired?'<span class=\"dot ok\"></span>paired <button onclick=unpairM() style=\"margin-left:8px;font-size:11px;padding:2px 8px\">Forget</button>':'<span class=\"dot bad\"></span>not paired'}</span></div>`+"
     "`<div class=row><b>Relay 1</b><span>${s.relay1?'CLOSED':'open'}</span></div>`+"
     "`<div class=row><b>Relay 2</b><span>${s.relay2?'CLOSED':'open'}</span></div>`;"
     "document.getElementById('fwv').textContent='v'+(s.fw||'?');"
@@ -87,6 +87,7 @@ static const char PAGE[] =
     "body:`ssid=${encodeURIComponent(s)}&pass=${encodeURIComponent(document.getElementById('pass').value)}`})"
     ".then(()=>alert('Saved — the VoxRelay is rebooting to join your network. Reconnect your phone to the same network and find it at voxrelay.local.'))}"
     "function forget(){if(confirm('Forget Wi-Fi and return to setup mode?'))fetch('/forget',{method:'POST'})}"
+    "function unpairM(){if(confirm('Forget the paired Vox Master? This prop will accept commands from any Master again until re-paired.'))fetch('/unpair',{method:'POST'}).then(tick)}"
     "function dh(){document.getElementById('statics').style.display="
     "document.getElementById('dhcp').checked?'none':'block'}"
     "function prefill(){const ip=document.getElementById('nip').value.trim();"
@@ -204,6 +205,14 @@ static esp_err_t wifi_post(httpd_req_t *req) {
 static esp_err_t forget_post(httpd_req_t *req) {
   httpd_resp_send(req, "ok", HTTPD_RESP_USE_STRLEN);
   net_forget_credentials();  // reboots
+  return ESP_OK;
+}
+
+// POST /unpair — locally forget the paired Vox Master (exclusive-trust escape
+// hatch). Stays on Wi-Fi; just clears the pairing so a new Master can adopt it.
+static esp_err_t unpair_post(httpd_req_t *req) {
+  link_unpair();
+  httpd_resp_send(req, "ok", HTTPD_RESP_USE_STRLEN);
   return ESP_OK;
 }
 
@@ -355,6 +364,7 @@ void web_start(void) {
       {.uri = "/relay", .method = HTTP_POST, .handler = relay_post},
       {.uri = "/wifi", .method = HTTP_POST, .handler = wifi_post},
       {.uri = "/forget", .method = HTTP_POST, .handler = forget_post},
+      {.uri = "/unpair", .method = HTTP_POST, .handler = unpair_post},
       {.uri = "/ipcfg", .method = HTTP_GET, .handler = ipcfg_get},
       {.uri = "/ota", .method = HTTP_POST, .handler = ota_post},
       {.uri = "/update/check", .method = HTTP_GET, .handler = update_check_get},
